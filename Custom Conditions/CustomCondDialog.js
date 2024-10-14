@@ -171,9 +171,12 @@ class CustomCondDialog extends Dialog {
                 padding: 5px; 
                 position: absolute; 
                 z-index: 1; 
-                bottom: 125%;
+                top: 125%;
                 opacity: 0; 
                 transition: opacity 0.3s;
+            }
+            .form-group.disabled-group > *:not(.tooltip-text) {
+                opacity: 0.5;
             }
         `;
 
@@ -195,12 +198,12 @@ class CustomCondDialog extends Dialog {
                 </div>
                 <hr>
                 <div class="section-mini-title">On applying condition:</div>
-                ${makeCheckbox("increase-level", "If present, increase level by", "1", {
-                    tooltipText: "Increases the level of the effect (if any) on a target that already has it. An effect without a level will never be added if already present."
-                })}
                 ${makeCheckbox("set-duration", "Set duration to", "1", {
                     suffix: "rounds",
                     tooltipText: "If checked and the effect has a duration, the duration of the effect on a target will be set (or reset, if already present) to the specified number of rounds."
+                })}
+                ${makeCheckbox("increase-level", "If present, increase level by", "1", {
+                    tooltipText: "Increases the level of the effect (if any) on a target that already has it. An effect without a level will never be added if already present."
                 })}
                 <hr>
                 <div class="section-mini-title">On removing condition:</div>
@@ -290,6 +293,12 @@ class CustomCondDialog extends Dialog {
             html.find("#increase-level-value").attr("placeholder", levelPlaceholder);
             html.find("#decrease-level-value").attr("placeholder", levelPlaceholder);
             html.find("#set-duration-value").attr("placeholder", durationPlaceholder);
+
+            // Disable level tickboxes for status conds
+            const disableTicks = this.selectedCondition.isStatus;
+            html.find("#increase-level, #decrease-level").prop("disabled", disableTicks);
+            html.find("#increase-level-value, #decrease-level-value").prop("disabled", disableTicks);
+            html.find("#increase-level, #decrease-level").closest(".form-group").toggleClass("disabled-group", disableTicks);
 
             this.saveState();
             event.stopPropagation();

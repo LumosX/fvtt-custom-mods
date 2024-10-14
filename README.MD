@@ -4,6 +4,9 @@ I may convert these (read: Custom Conditions) to real modules at some point, if 
 
 
 ### Custom Conditions 
+
+[Find out more](Custom%20Conditions/README.md)
+
 This is where the good stuff lives. Descriptions TBA.
 
 
