@@ -4,10 +4,13 @@ I may convert these (read: Custom Conditions) to real modules at some point, if 
 
 
 ### Custom Conditions 
-
+This is where the good stuff lives. Descriptions TBA.
 
 
 ### Extra Change Targets
+
+[Find out more](Extra%20Change%20Targets/README.md)
+
 Clumsily adds extra change targets to actors. These are related to CMB and CMD for combat manoeuvres, as well as effective size category increases. None are used internally by the system, so this script is of rather limited usefulness.
 
 
