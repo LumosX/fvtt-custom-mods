@@ -29,11 +29,8 @@ Any items of type `Buff` placed in this folder will be picked up by the script, 
 
 On my end, I've placed the macros in a folder at the top of the macros directory. All players have been granted Observer permissions, so they can execute the scripts, but can't otherwise modify them.
 
-<div style="display: flex; margin-bottom: 1em;">
-  <div style="flex: 0 0 auto; margin-right: 1em;">
-    <img src="img/cc_1.png" alt="Custom Conditions Macro" style="height: auto;">
-  </div>
-  <div style="flex: 1;">
+
+<img src="img/cc_1.png" align="left" />
 
 You can find the macro in the **Foundry Macros Directory**, which is accessed in the following way:
 
@@ -41,10 +38,15 @@ You can find the macro in the **Foundry Macros Directory**, which is accessed in
 * Then open the "CUSTOM CONDITIONS MACROS" folder and see the "Add/Remove Conditions and Effects" macro _(pic related, middle)_. The world script is also there, but we don't need to do anything with it ever.
 * Clicking it here will let you open and execute it, but you most likely want to drag the macro icon to your hotbar _(pic rel, bottom)_ for ease of use.
 
-  </div>
-</div>
-
-
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+  
 ### Using the Macro (Applying and Removing Conditions)
 
 When you click on the macro (when you execute it), you'll see the following window. Each option that isn't self-explanatory has a tooltip, so you might want to read those too.
@@ -126,4 +128,8 @@ To add your own custom conditions for use with this tool:
 
 If you're using this for a feature that you just want to tag a token with, such as the Slayer's Studied Target, or something like the Scout sphere from Spheres of Might, you're done, and needn't do anything else. The condition can be selected, applied to, and removed from targeted tokens. 
 
-3. 
+![](img/cc_4.jpg)
+
+I have now changed the name and the icon of my condition to Studied Target.
+
+![](img/cc_5.jpg)

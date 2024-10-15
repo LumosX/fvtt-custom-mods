@@ -77,6 +77,6 @@ Here's an example with my not!branched spear _(I've slightly edited the way the 
 
 ![](img/ect_6.jpg)
 
-When we hover over our the attack in our token's quickbar, the distances we can reach are hightlighted on the battlemap, all correctly. Note the damage and reach values reflected in the character sheet as well.
+When we hover over the attack in our token's quickbar, the distances we can reach are hightlighted on the battlemap, all correctly. Note the damage and reach values reflected in the character sheet as well.
 
 ![](img/ect_7.jpg)
