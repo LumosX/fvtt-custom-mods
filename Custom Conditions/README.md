@@ -190,7 +190,7 @@ What are we working with? No levels and no real changes—the system doesn't giv
 The Pathfinder system provides three possible End Timings: Turn Start, Turn End, and Initiative:
 
 * **Turn Start/Turn End:** In our case (2 rounds), when the _second round begins_ and the _target's turn_ starts/ends, the condition will automatically end for it. These work wonderfully if you apply a condition with Turn Start/Turn End on yourself on your own turn, but can end faster than you might expect if your initiative count is lower than the target's.
-* **Initiative:** When the duration elapses (again, 2 rounds in our case) and _the current initiative count_ is hit, the condition will automatically end on the target. I prefer using this end timing when possible, as conditions applied on opportunity attacks don't necessarily align with the target's initiative count.
+* **Initiative:** In our case (2 rounds), when the _second round begins_ and _the current initiative count_ is hit, the condition will automatically end on the target. I prefer using this end timing when possible, as conditions applied on opportunity attacks don't necessarily align with the target's initiative count.
 
 
 ![](img/cc_7.jpg)
