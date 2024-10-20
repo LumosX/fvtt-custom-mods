@@ -18,8 +18,12 @@ class CustomCondDialog extends Dialog {
         currentState[conditionId] = {
             name: this.selectedCondition?.name || "default",
             increaseLevel: this.toParamObject(html, "increase-level", false),
-            setDuration: this.toParamObject(html, "set-duration", false),
             decreaseLevel: this.toParamObject(html, "decrease-level", false),
+            setDuration: {
+                ...this.toParamObject(html, "set-duration", false),
+                type: html.find("#duration-type").val(),
+                end: html.find("#duration-end").val()
+            },
         };
         
         // Global settings (not condition-specific)
@@ -75,7 +79,7 @@ class CustomCondDialog extends Dialog {
             .map(x => makeOptionButton(x._id, x.name, x.texture, true))
             .join("");
 
-            const optionCss = `
+        const optionCss = `
             .custom-select {
                 position: relative;
                 width: 100%;
@@ -139,25 +143,11 @@ class CustomCondDialog extends Dialog {
                 pointer-events: auto;
             }
         `;
-
-        const makeCheckbox = (id, label, inlineTextboxPlaceholder = null, {
-            inlineTextboxClass = "inline-textbox",
-            suffix = "",
-            tooltipText = null,
-        } = {}) => `<div class="form-group centred-tickbox tooltip">
-                <input type="checkbox" id="${id}" name="${id}">
-                <label for="${id}" style="display: flex">
-                    ${label}${inlineTextboxPlaceholder != null
-                    ? `<input type="text" class="${inlineTextboxClass}"
-                        id="${id}-value" name="${id}-value" placeholder="${inlineTextboxPlaceholder ?? ""}">` 
-                    : ""}${suffix}</label>
-                    ${tooltipText ? `<span class="tooltip-text" id="${id}-tooltip" name="${id}-tooltip">${tooltipText}</span>` : ""}
-            </div>`;
-
+        
         const checkboxSectionCss = `
             .section-mini-title { font-weight: bold; margin-top: 5px; margin-bottom: 5px; }
-            .inline-textbox { width: 40px !important; margin-left: 5px !important; margin-right: 5px !important; }
-            .inline-textbox-wide { width: auto !important; flex: 1 !important; margin-left: 5px !important; margin-right: 5px !important; }
+            .inline-textbox { width: 40px !important; margin: 0 5px !important; }
+            .inline-textbox-wide { width: auto !important; flex: 1 !important; margin: 0 5px !important; }
             .inline-textbox::placeholder { opacity:0.5 !important; }
             .inline-textbox-wide::placeholder { opacity:0.5 !important; }
             .tooltip { position: relative; display: inline-block; }
@@ -178,8 +168,42 @@ class CustomCondDialog extends Dialog {
             .form-group.disabled-group > *:not(.tooltip-text) {
                 opacity: 0.5;
             }
+            .form-group select {
+                height: 26px;
+                color: var(--color-text-dark-primary);
+            }
+            .form-group label {
+                display: flex !important;
+                align-items: center;
+                white-space: nowrap;
+                overflow: hidden;
+            }
+            
+            .duration-end-wrapper label::before {
+                content: '';
+                display: inline-block;
+                width: 25px;
+                flex-shrink: 0;
+            }
         `;
-
+        
+        const makeCheckbox = (id, label, inlineTextboxPlaceholder = null, {
+            inlineTextboxClass = "inline-textbox",
+            suffix = "",
+            tooltipText = null,
+        } = {}) => `<div class="form-group centred-tickbox tooltip">
+                <input type="checkbox" id="${id}" name="${id}">
+                <label for="${id}">
+                    ${label}
+                    ${inlineTextboxPlaceholder != null
+                    ? `<input type="text" class="${inlineTextboxClass}"
+                        id="${id}-value" name="${id}-value" placeholder="${inlineTextboxPlaceholder ?? ""}">` 
+                    : ""}
+                    ${suffix}
+                </label>
+                ${tooltipText ? `<span class="tooltip-text" id="${id}-tooltip" name="${id}-tooltip">${tooltipText}</span>` : ""}
+            </div>`;
+        
         const content = `
             <style>
                 ${checkboxSectionCss}
@@ -199,9 +223,29 @@ class CustomCondDialog extends Dialog {
                 <hr>
                 <div class="section-mini-title">On applying condition:</div>
                 ${makeCheckbox("set-duration", "Set duration to", "1", {
-                    suffix: "rounds",
-                    tooltipText: "If checked and the effect has a duration, the duration of the effect on a target will be set (or reset, if already present) to the specified number of rounds."
+                    suffix: `
+                        <select id="duration-type">
+                            <option value="round">rounds</option>
+                            <option value="minute">minutes</option>
+                            <option value="hour">hours</option>
+                        </select>`,
+                    tooltipText: "If checked and the effect has a duration, the duration of the effect on a target will be set (or reset, if already present) to " + 
+                        "the specified duration (rounds/minutes/hours) and ending time condition."
                 })}
+                <div class="form-group tooltip duration-end-wrapper" style="margin: 0 5px">
+                    <label for="duration-end">Ending at:</label>
+                    <select id="duration-end">
+                        <option value="turnStart">Start of target's turn</option>
+                        <option value="turnEnd">End of target's turn</option>
+                        <option value="initiative">This initiative count</option>
+                        <option value="initiativeEnd">After this initiative count</option>
+                    </select>
+                    <span class="tooltip-text" id="duration-end-tooltip" name="duration-end-tooltip">
+                        The effect will end on the respective round:<br>
+                        <em>"Start/end of target's turn":</em> When <strong>the target's</strong> turn begins/ends.<br>
+                        <em>"(After) This initiative count":</em> When this initiative count is reached/when the turn at this initiative count ends.
+                    </span>
+                </div>
                 ${makeCheckbox("increase-level", "If present, increase level by", "1", {
                     tooltipText: "Increases the level of the effect (if any) on a target that already has it. An effect without a level will never be added if already present."
                 })}
@@ -260,6 +304,7 @@ class CustomCondDialog extends Dialog {
         this.saveState();
     }
 
+
     addSelectorListeners(html) {
         const customSelect = html.find(".custom-select");
         const selectSelected = customSelect.find(".select-selected");
@@ -270,7 +315,19 @@ class CustomCondDialog extends Dialog {
             event.stopPropagation();
         });
 
-        selectItems.find("input[type='radio']").on("change click", async event => {
+        this.addItemSelectorListeners(html, selectItems, selectSelected);
+        this.addItemFilteringListeners(html, selectItems);
+        
+        // Handler for the entire dialog, to close the "dropdown" if you click outside it
+        $(this.element).on("click", event => {
+            if (!customSelect.is(event.target) && customSelect.has(event.target).length === 0) {
+                selectItems.hide();
+            }
+        });
+    }
+
+    addItemSelectorListeners(html, selectItems, selectSelected) {
+        selectItems.find("input[type='radio']").on("click", async event => {
             const selectedOption = $(event.target).closest("label");
             selectSelected.html(selectedOption.html());
             selectItems.hide();
@@ -285,14 +342,33 @@ class CustomCondDialog extends Dialog {
 
             // Set textbox placeholders based on the current condition's data
             let levelPlaceholder = 0, durationPlaceholder = 0;
+            let durationTypePlaceholder = "round", durationEndPlaceholder = "turnStart";
             if (!this.selectedCondition.isStatus) {
                 const condItem = game.items.get(this.selectedCondition.id);
                 levelPlaceholder = condItem.system.level;
-                durationPlaceholder = (await condItem.getDuration()) / CONFIG.time.roundTime; // the function gets seconds
+                
+                durationTypePlaceholder = condItem.system.duration.units;
+                if (!["round", "minute", "hour"].includes(durationTypePlaceholder))
+                    durationTypePlaceholder = "round";
+                const durSecs = await condItem.getDuration();
+                durationPlaceholder = (() => {
+                    switch (durationTypePlaceholder) {
+                        case "round": return durSecs / CONFIG.time.roundTime;
+                        case "minute": return durSecs / 60;
+                        case "hour": return durSecs / 3600;
+                    }
+                })();
+
+                durationEndPlaceholder = condItem.system.duration.end;
+                if (!["turnStart", "turnEnd", "initiative"].includes(durationEndPlaceholder))
+                    durationEndPlaceholder = "turnStart";
             }
+            console.log(durationPlaceholder, durationTypePlaceholder, durationEndPlaceholder);
             html.find("#increase-level-value").attr("placeholder", levelPlaceholder);
             html.find("#decrease-level-value").attr("placeholder", levelPlaceholder);
             html.find("#set-duration-value").attr("placeholder", durationPlaceholder);
+            html.find("#duration-type").val(durationTypePlaceholder);
+            html.find("#duration-end").val(durationEndPlaceholder);
 
             // Disable level tickboxes for status conds
             const disableTicks = this.selectedCondition.isStatus;
@@ -303,7 +379,9 @@ class CustomCondDialog extends Dialog {
             this.saveState();
             event.stopPropagation();
         });
-        
+    }
+
+    addItemFilteringListeners(html, selectItems) {
         // Change the currently selected object if it's hidden
         const ensureCurrentSelectionNotHidden = () => {
             const currentSelected = selectItems.find(`input[value="${this.selectedCondition?.id}"]`);
@@ -345,14 +423,8 @@ class CustomCondDialog extends Dialog {
         html.find("#filter-items").on("input", filterCustomItemOptions); //where is rxJs when you need it
         html.find("#filter-items-value").on("input", filterCustomItemOptions);
         ensureCurrentSelectionNotHidden();
-
-        // Handler for the entire dialog, to close the "dropdown" if you click outside it
-        $(this.element).on("click", event => {
-            if (!customSelect.is(event.target) && customSelect.has(event.target).length === 0) {
-                selectItems.hide();
-            }
-        });
     }
+
 
     addDataChangeListeners(html) {
         // Ensure textbox input is always numbers, or an empty string:
@@ -362,17 +434,26 @@ class CustomCondDialog extends Dialog {
                 value = Math.min(Math.max(parseInt(value, 10), 0), 9999);
             event.target.value = value;
         }
-        const onNumericTbInput = event => { sanitiseNumericInputs(event); this.saveState(); }
-        html.find("#increase-level-value").on("input", onNumericTbInput);
-        html.find("#set-duration-value").on("input", onNumericTbInput);
-        html.find("#decrease-level-value").on("input", onNumericTbInput);
+        html.find("#increase-level-value, #decrease-level-value, #set-duration-value")
+            .on("input", event => { sanitiseNumericInputs(event); this.saveState(); });
+
+        html.find("#duration-type, #duration-end")
+            .on("change", () => this.saveState());
         
-        // Save state on ticking; wipe textboxes EXCEPT tags when the respective tick is unticked
-        html.find('input[type="checkbox"]').on("change", event => {
-            if (event.target.id !== "filter-items" && !event.target.checked) 
-                html.find(`#${event.target.id}-value`)?.val('');
+        // Save state on ticking; wipe textboxes EXCEPT filtering tags when the respective tick is unticked
+        html.find("#increase-level, #decrease-level, #set-duration").on("change", event => {
+            const valTb = html.find(`#${event.target.id}-value`);
+            valTb.css("opacity", event.target.checked ? 1 : 0.5);
+            if (!event.target.checked) valTb?.val('')
+
+            if (event.target.id === "set-duration") {
+                html.find("#duration-type, #duration-end").css("opacity", event.target.checked ? 1 : 0.5);
+            }
+
             this.saveState();
         });
+
+        html.find("#filter-items").on("change", () => this.saveState());
         html.find("#filter-items-value").on("input", () => this.saveState());
     }
 
@@ -399,8 +480,16 @@ class CustomCondDialog extends Dialog {
             const condState = state[this.selectedCondition.id];
             if (condState) {
                 this.setFromParamObject(html, "increase-level", condState.increaseLevel);
-                this.setFromParamObject(html, "set-duration", condState.setDuration);
                 this.setFromParamObject(html, "decrease-level", condState.decreaseLevel);
+                this.setFromParamObject(html, "set-duration", condState.setDuration);
+                if (condState.setDuration) {
+                    html.find("#duration-type")
+                        .val(condState.setDuration.type || "round")
+                        .css("opacity", condState.setDuration.active ? 1 : 0.5);
+                    html.find("#duration-end")
+                        .val(condState.setDuration.end || "turnStart")
+                        .css("opacity", condState.setDuration.active ? 1 : 0.5);
+                }
             }
 
             // Update the select element to show the current condition
@@ -441,11 +530,16 @@ class CustomCondDialog extends Dialog {
             conditionId: this.selectedCondition.id,
             isStatus: this.selectedCondition.isStatus,
             increaseLevel: this.toParamObject(html, "increase-level"),
-            setDuration: this.toParamObject(html, "set-duration"),
+            setDuration: {
+                ...this.toParamObject(html, "set-duration"),
+                type: html.find("#duration-type").val(),
+                end: html.find("#duration-end").val()
+            },
         });
     }
     
     async removeCondition(html) {
+        console.log("User", game.user, "targets", game.user.targets, "size", game.user.targets.size);
         if (game.user.targets.size === 0) {
             ui.notifications.warn("No tokens targeted.");
             return;

@@ -54,9 +54,7 @@ You can find the macro in the **Foundry Macros Directory**, which is accessed in
 ![](img/cc_1.png)
 
 
-
-
-## Applying and Removing Conditions
+### Using the Macro (Applying and Removing Conditions)
 
 When you click on the macro (when you execute it), you'll see the following window. Each option that isn't self-explanatory has a tooltip, so you might want to read those too.
 
