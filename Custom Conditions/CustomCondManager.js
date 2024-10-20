@@ -81,9 +81,9 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
         const { conditionId, _, increaseLevel, setDuration } = parameters;
 
         const [cond, condIdentifier] = getCustomConditionItem(conditionId);
+
         // On actors who don't have this condition yet, we'll add a new item.
-        const durationOverrideRnds = setDuration.active ? setDuration.value : false;
-        const newCondToAdd = createCustomConditionItem(cond, condIdentifier, durationOverrideRnds);
+        const newCondToAdd = createCustomConditionItem(cond, condIdentifier, setDuration);
         let affectedTokens = [];
         for (let token of targets) {
             const actorCond = getCustomBuffOnActor(token.actor, condIdentifier);
@@ -95,7 +95,7 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
                 affectedTokens.push({token: token, state: AffectedToken.ConditionAdded})
             }
             else {
-                updates = {}
+                const updates = {}
                 if (increaseLevel.active) {
                     updates["system.level"] = parseInt(actorCond.system.level, 10) + increaseLevel.value;
                 }
@@ -103,7 +103,7 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
                     updates["system.duration"] = newCondToAdd.system.duration;
 
                     const embeddedActiveEffect = actorCond.effects.find(x => x.name === cond.name);
-                    embeddedActiveEffect.update({"duration": createStatusEffectDuration(durationOverrideRnds)})
+                    embeddedActiveEffect.update({"duration": createStatusEffectDuration(setDuration)})
                 }
                 actorCond.update(updates);
                 affectedTokens.push({token: token, state: AffectedToken.ConditionIncreased})
@@ -152,23 +152,31 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
         return [item.toObject(), getCustomBuffTag(item.system.tag)];
     }
 
-    function createCustomConditionItem(cond, newIdentifier, durationOverrideRnds) {
+    function createCustomConditionItem(cond, newIdentifier, setDuration) {
         cond.system.active = true;
         cond.system.subType = "misc";
         cond.system.tag = newIdentifier;
 
         // Duration override
-        if (durationOverrideRnds && durationOverrideRnds > 0) {
-            cond.system.duration.value = durationOverrideRnds.toString();
-            cond.system.duration.units = "round";
-            cond.system.duration.totalSeconds = durationOverrideRnds * CONFIG.time.roundTime;
-            cond.system.duration.start = game.time.worldTime
+        if (setDuration.active && setDuration.value > 0) {
+            const durSecs = getTotalSecondsOfCustomDuration(setDuration);
+            cond.system.duration.units = "round"; // Seconds not supported here
+            cond.system.duration.value = (durSecs / CONFIG.time.roundTime).toLocaleString();
+            cond.system.duration.totalSeconds = durSecs;
+
+            cond.system.duration.start = game.time.worldTime;
+            // End timing type. Override our custom one with one the system can understand.
+            cond.system.duration.end = setDuration.end === "initiativeEnd" 
+                ? "initiative" 
+                : setDuration.end;
         }
 
         // If it doesn't include a "custom condition", add one; this gets converted into an embedded active effect
-        if (!cond.system.conditions.custom.includes(cond.name)) cond.system.conditions.custom.push(cond.name);
+        if (!cond.system.conditions.custom.includes(cond.name)) 
+            cond.system.conditions.custom.push(cond.name);
 
-        if (!cond.system.tags.includes(itemTag)) cond.system.tags.push(itemTag);
+        if (!cond.system.tags.includes(itemTag)) 
+            cond.system.tags.push(itemTag);
 
         const autoDelCallName = itemPrefix + "Autodelete";
         if (!cond.system.scriptCalls) cond.system.scriptCalls = [];
@@ -193,12 +201,11 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
         const { conditionId, _, __, setDuration } = parameters;
 
         const statusCond = pf1.registry.conditions.get(conditionId);
-        const effect = createStatusEffect(statusCond.name, statusCond.texture, conditionId, 
-            setDuration.active ? setDuration.value : false);
+        const effect = createStatusEffect(statusCond.name, statusCond.texture, conditionId, setDuration);
 
         let affectedTokens = [];
         for (let token of targets) {
-            const actorEffect = token.actor.effects.find(x => x.name === effect.name);
+            const actorEffect = token.actor.effects.find(x => x.name === statusCond.name);
              // Status effects are never stackable (but their durations may be updated)    
             if (actorEffect && !setDuration.active) continue;
 
@@ -229,7 +236,7 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
         renderChatMessage(userId, effect.name, effect.texture, true, false, affectedTokens);
     }
 
-    function createStatusEffect(name, icon, statusName, durationOverrideRnds) {
+    function createStatusEffect(name, icon, statusName, setDuration) {
         const effect = {
             name: name,
             icon: icon,
@@ -243,25 +250,42 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
         if (game.combat) {
             effect.flags.pf1.initiative = game.combat.turns[game.combat.turn].initiative;
         }
-        if (durationOverrideRnds && durationOverrideRnds > 0) {
-            // Not sure why active status effects are always set to a number of seconds even when you use rounds 
-            // (when you right-click on a status in the buffs page), but I'm following suit just to be safe
-            effect.duration = createStatusEffectDuration(durationOverrideRnds);
+        if (setDuration.active) {
+            // Not sure why active status effects are always set to a number of seconds even when 
+            // you use rounds (when you right-click on a status in the buffs page), but I'm following suit, 
+            // just to be safe... and also to exploit the way active effect expiry works
+            effect.duration = createStatusEffectDuration(setDuration);
         }
         return effect;
     }
 
-    function createStatusEffectDuration(durationRounds) {
+    function createStatusEffectDuration(setDuration) {
+        console.log("status effect");
+        const durationSecs = getTotalSecondsOfCustomDuration(setDuration);
         return {
             "startTime": game.time.worldTime,
-            "duration": durationRounds * CONFIG.time.roundTime,
-            "seconds": durationRounds * CONFIG.time.roundTime,
+            "duration": durationSecs,
+            "seconds": durationSecs,
             "rounds": null,
             "turns": null,
             "startRound": game.combat ? game.combat.round : null,
             "startTurn": game.combat ? game.combat.turn : null,
             "type": "seconds",
         }
+    }
+
+    function getTotalSecondsOfCustomDuration(setDuration) {
+        let secs = (() => { switch (setDuration.units) {
+            case "round": return setDuration.value * CONFIG.time.roundTime;
+            case "minute": return setDuration.value * 60;
+            case "hour": return setDuration.value * 3600;
+            default: return setDuration.value;
+        }})();
+        // Dirty hack to support our custom "initiative-end" timing.
+        if (setDuration.end === "initiativeEnd") {
+            secs++;
+        }
+        return secs;
     }
 
 

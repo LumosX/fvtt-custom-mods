@@ -21,7 +21,7 @@ class CustomCondDialog extends Dialog {
             decreaseLevel: this.toParamObject(html, "decrease-level", false),
             setDuration: {
                 ...this.toParamObject(html, "set-duration", false),
-                type: html.find("#duration-type").val(),
+                units: html.find("#duration-units").val(),
                 end: html.find("#duration-end").val()
             },
         };
@@ -224,7 +224,7 @@ class CustomCondDialog extends Dialog {
                 <div class="section-mini-title">On applying condition:</div>
                 ${makeCheckbox("set-duration", "Set duration to", "1", {
                     suffix: `
-                        <select id="duration-type">
+                        <select id="duration-units">
                             <option value="round">rounds</option>
                             <option value="minute">minutes</option>
                             <option value="hour">hours</option>
@@ -342,33 +342,33 @@ class CustomCondDialog extends Dialog {
 
             // Set textbox placeholders based on the current condition's data
             let levelPlaceholder = 0, durationPlaceholder = 0;
-            let durationTypePlaceholder = "round", durationEndPlaceholder = "turnStart";
+            let durationUnits = "round", durationEndTiming = "turnStart";
             if (!this.selectedCondition.isStatus) {
                 const condItem = game.items.get(this.selectedCondition.id);
                 levelPlaceholder = condItem.system.level;
                 
-                durationTypePlaceholder = condItem.system.duration.units;
-                if (!["round", "minute", "hour"].includes(durationTypePlaceholder))
-                    durationTypePlaceholder = "round";
+                durationUnits = condItem.system.duration.units;
+                if (!["round", "minute", "hour"].includes(durationUnits))
+                    durationUnits = "round";
                 const durSecs = await condItem.getDuration();
                 durationPlaceholder = (() => {
-                    switch (durationTypePlaceholder) {
+                    switch (durationUnits) {
                         case "round": return durSecs / CONFIG.time.roundTime;
                         case "minute": return durSecs / 60;
                         case "hour": return durSecs / 3600;
                     }
                 })();
 
-                durationEndPlaceholder = condItem.system.duration.end;
-                if (!["turnStart", "turnEnd", "initiative"].includes(durationEndPlaceholder))
-                    durationEndPlaceholder = "turnStart";
+                durationEndTiming = condItem.system.duration.end;
+                if (!["turnStart", "turnEnd", "initiative"].includes(durationEndTiming))
+                    durationEndTiming = "turnStart";
             }
-            console.log(durationPlaceholder, durationTypePlaceholder, durationEndPlaceholder);
+            console.log(durationPlaceholder, durationUnits, durationEndTiming);
             html.find("#increase-level-value").attr("placeholder", levelPlaceholder);
             html.find("#decrease-level-value").attr("placeholder", levelPlaceholder);
             html.find("#set-duration-value").attr("placeholder", durationPlaceholder);
-            html.find("#duration-type").val(durationTypePlaceholder);
-            html.find("#duration-end").val(durationEndPlaceholder);
+            html.find("#duration-units").val(durationUnits);
+            html.find("#duration-end").val(durationEndTiming);
 
             // Disable level tickboxes for status conds
             const disableTicks = this.selectedCondition.isStatus;
@@ -437,7 +437,7 @@ class CustomCondDialog extends Dialog {
         html.find("#increase-level-value, #decrease-level-value, #set-duration-value")
             .on("input", event => { sanitiseNumericInputs(event); this.saveState(); });
 
-        html.find("#duration-type, #duration-end")
+        html.find("#duration-units, #duration-end")
             .on("change", () => this.saveState());
         
         // Save state on ticking; wipe textboxes EXCEPT filtering tags when the respective tick is unticked
@@ -447,7 +447,7 @@ class CustomCondDialog extends Dialog {
             if (!event.target.checked) valTb?.val('')
 
             if (event.target.id === "set-duration") {
-                html.find("#duration-type, #duration-end").css("opacity", event.target.checked ? 1 : 0.5);
+                html.find("#duration-units, #duration-end").css("opacity", event.target.checked ? 1 : 0.5);
             }
 
             this.saveState();
@@ -483,7 +483,7 @@ class CustomCondDialog extends Dialog {
                 this.setFromParamObject(html, "decrease-level", condState.decreaseLevel);
                 this.setFromParamObject(html, "set-duration", condState.setDuration);
                 if (condState.setDuration) {
-                    html.find("#duration-type")
+                    html.find("#duration-units")
                         .val(condState.setDuration.type || "round")
                         .css("opacity", condState.setDuration.active ? 1 : 0.5);
                     html.find("#duration-end")
@@ -532,7 +532,7 @@ class CustomCondDialog extends Dialog {
             increaseLevel: this.toParamObject(html, "increase-level"),
             setDuration: {
                 ...this.toParamObject(html, "set-duration"),
-                type: html.find("#duration-type").val(),
+                units: html.find("#duration-units").val(),
                 end: html.find("#duration-end").val()
             },
         });
