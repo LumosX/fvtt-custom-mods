@@ -363,7 +363,6 @@ class CustomCondDialog extends Dialog {
                 if (!["turnStart", "turnEnd", "initiative"].includes(durationEndTiming))
                     durationEndTiming = "turnStart";
             }
-            console.log(durationPlaceholder, durationUnits, durationEndTiming);
             html.find("#increase-level-value").attr("placeholder", levelPlaceholder);
             html.find("#decrease-level-value").attr("placeholder", levelPlaceholder);
             html.find("#set-duration-value").attr("placeholder", durationPlaceholder);
@@ -539,7 +538,6 @@ class CustomCondDialog extends Dialog {
     }
     
     async removeCondition(html) {
-        console.log("User", game.user, "targets", game.user.targets, "size", game.user.targets.size);
         if (game.user.targets.size === 0) {
             ui.notifications.warn("No tokens targeted.");
             return;

@@ -9,8 +9,12 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
             // Piggybacking off the advanced-macros module which is registered.
             socket = socketlib.modules.get("advanced-macros")
 
+            // Perform pre-init
+            preInit_CleanExistingHooks();
+            // Patch system functions
+            Hooks.on("pf1PostReady", () => onPF1PostReady_ApplyMonkeyPatches());
+
             game.customConditions = {};
-            //game.customConditions.forceInit = Init;
 
             const bindGMFunc = (name, binding) => {
                 socket.functions.delete(name);
@@ -23,9 +27,10 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
             game.customConditions.apply = bindGMFunc("applyCond", apply);
             game.customConditions.remove = bindGMFunc("removeCond", remove);
 
-            // Set up a simple "execute function" binding, used 
             socket.functions.delete(showUIMessage);
             socket.register(showUIMessage, (message, _) => ui.notifications.warn(message));
+
+            game.customConditions.hook = Hooks.on("createActiveEffect", onCreateActiveEffect_HandleInitiativeEndDurations);
 
             console.log("Lumos's Custom Condition Manager | SUCCESSFULLY initialised");
         }
@@ -54,9 +59,49 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
         }
         return targets;
     }
-    
+
     apply = async (userId, parameters) => await trigger(userId, parameters, true);
     remove = async (userId, parameters) => await trigger(userId, parameters, false);
+
+
+    function preInit_CleanExistingHooks() {
+        // Init hook we need to handle special AE durations
+        if (game.customConditions?.hook)
+            Hooks.off("createActiveEffect", game.customConditions.hook)
+    }
+
+    function onPF1PostReady_ApplyMonkeyPatches() {
+        // Patch the pf1e effect expiry function. It's busted, and fails to track "initiative"-ended events properly.
+        pf1.documents.actor.ActorPF.prototype.expireActiveEffects = patchedFunc_ExpireActiveEffects;
+        console.log("Lumos's Custom Condition Manager | Function patch applied.")
+    }
+
+
+    // Called by a hook. Used to properly initialise effects that have been set up with the custom "initiativeEnd" end timing.
+    async function onCreateActiveEffect_HandleInitiativeEndDurations(newEffect, options, userId) {
+        if (userId !== game.user.id) return;
+
+        const initEndEffectTargetInit = newEffect.flags?.lumos?.initiativeEnd ?? newEffect.parent.flags?.lumos?.initiativeEnd;
+        if (!initEndEffectTargetInit) return;
+
+        console.log("create hook triggered", newEffect, initEndEffectTargetInit);
+        newEffect.update(getEffectUpdatesForInitEndEffect(initEndEffectTargetInit));
+    }
+
+
+    function getInitiativeForInitEndEffect() {
+        return game.combat.turns[game.combat.turn].initiative - 0.001;
+    }
+
+    function getEffectUpdatesForInitEndEffect(targetInitiative) {
+        return {
+            "flags.pf1.duration.end": "initiative",
+            "flags.pf1.duration.initiative": targetInitiative,
+            "flags.pf1.initiative": targetInitiative,
+            "system.initiative": targetInitiative
+        }
+    }
+
 
     async function trigger(userId, parameters, isCreating) {
         if (!checkRunningAsGM(userId)) return;
@@ -64,7 +109,7 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
         const targets = getUserTargets(userId);
         if (!targets) return;
 
-        if (parameters.isStatus) 
+        if (parameters.isStatus)
             await (isCreating ? applyStatusEffect : removeStatusEffect)(userId, parameters, targets);
         else
             await (isCreating ? applyCustomCondition : removeCustomCondition)(userId, parameters, targets);
@@ -92,7 +137,7 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
 
             if (!actorCond) {
                 token.actor.createEmbeddedDocuments("Item", [newCondToAdd]);
-                affectedTokens.push({token: token, state: AffectedToken.ConditionAdded})
+                affectedTokens.push({ token: token, state: AffectedToken.ConditionAdded })
             }
             else {
                 const updates = {}
@@ -102,11 +147,20 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
                 if (setDuration.active) {
                     updates["system.duration"] = newCondToAdd.system.duration;
 
-                    const embeddedActiveEffect = actorCond.effects.find(x => x.name === cond.name);
-                    embeddedActiveEffect.update({"duration": createStatusEffectDuration(setDuration)})
+                    const updateInitEnd = game.combat && setDuration.end === "initiativeEnd";
+                    const targetInit = newCondToAdd.flags.lumos?.initiativeEnd;
+
+                    if (updateInitEnd)
+                        updates["flags.lumos.initiativeEnd"] = targetInit;
+
+                    const effectUpdates = {
+                        "duration": createStatusEffectDuration(setDuration),
+                        ...(updateInitEnd && getEffectUpdatesForInitEndEffect(targetInit))
+                    };
+                    actorCond.effect.update(effectUpdates);
                 }
                 actorCond.update(updates);
-                affectedTokens.push({token: token, state: AffectedToken.ConditionIncreased})
+                affectedTokens.push({ token: token, state: AffectedToken.ConditionIncreased })
             }
         }
 
@@ -126,19 +180,19 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
             // If the current level is greater than zero but won't be removed by the decrease, do it
             const levelDecrease = parseInt(actorCond.system.level, 10) - decreaseLevel.value;
             if (decreaseLevel.active && actorCond.system.level > 0 && levelDecrease > 0) {
-                actorCond.update({"system.level": levelDecrease});
-                affectedTokens.push({token: token, state: AffectedToken.ConditionDecreased})
-            } 
+                actorCond.update({ "system.level": levelDecrease });
+                affectedTokens.push({ token: token, state: AffectedToken.ConditionDecreased })
+            }
             // Otherwise just remove the condition entirely
             else {
                 token.actor.deleteEmbeddedDocuments("Item", [actorCond.id]);
-                affectedTokens.push({token: token, state: AffectedToken.ConditionRemoved})
+                affectedTokens.push({ token: token, state: AffectedToken.ConditionRemoved })
             }
         }
 
         renderChatMessage(userId, cond.name, cond.img, false, false, affectedTokens);
     }
-    
+
 
 
     const itemTag = "appliedCustomCondition";
@@ -157,6 +211,13 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
         cond.system.subType = "misc";
         cond.system.tag = newIdentifier;
 
+        if (!cond.system.tags.includes(itemTag))
+            cond.system.tags.push(itemTag);
+
+        // If it doesn't include a "custom condition", add one; this causes the little label to pop up
+        if (!cond.system.conditions.custom.includes(cond.name))
+            cond.system.conditions.custom.push(cond.name);
+
         // Duration override
         if (setDuration.active && setDuration.value > 0) {
             const durSecs = getTotalSecondsOfCustomDuration(setDuration);
@@ -166,17 +227,17 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
 
             cond.system.duration.start = game.time.worldTime;
             // End timing type. Override our custom one with one the system can understand.
-            cond.system.duration.end = setDuration.end === "initiativeEnd" 
-                ? "initiative" 
+            cond.system.duration.end = setDuration.end === "initiativeEnd"
+                ? "initiative"
                 : setDuration.end;
         }
 
-        // If it doesn't include a "custom condition", add one; this gets converted into an embedded active effect
-        if (!cond.system.conditions.custom.includes(cond.name)) 
-            cond.system.conditions.custom.push(cond.name);
+        // Add data flag for the special initiative adjustment for the embedded active effect
+        if (game.combat && setDuration.active && setDuration.end === "initiativeEnd") {
+            cond.flags = cond.flags || {};
+            cond.flags.lumos = { "initiativeEnd": getInitiativeForInitEndEffect() };
+        }
 
-        if (!cond.system.tags.includes(itemTag)) 
-            cond.system.tags.push(itemTag);
 
         const autoDelCallName = itemPrefix + "Autodelete";
         if (!cond.system.scriptCalls) cond.system.scriptCalls = [];
@@ -206,14 +267,21 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
         let affectedTokens = [];
         for (let token of targets) {
             const actorEffect = token.actor.effects.find(x => x.name === statusCond.name);
-             // Status effects are never stackable (but their durations may be updated)    
+            // Status effects are never stackable (but their durations may be updated)    
             if (actorEffect && !setDuration.active) continue;
 
             if (!actorEffect)
                 token.actor.createEmbeddedDocuments("ActiveEffect", [effect]);
-            else
-                actorEffect.update({"duration": effect.duration});
-            affectedTokens.push({token: token, state: AffectedToken.ConditionAdded})
+            else {
+                const updateInitEnd = game.combat && setDuration.end === "initiativeEnd";
+                const targetInit = effect.flags.lumos?.initiativeEnd;
+                actorEffect.update({
+                    "duration": effect.duration,
+                    ...(updateInitEnd && getEffectUpdatesForInitEndEffect(targetInit)),
+                    ...(updateInitEnd && { "flags.lumos.initiativeEnd": targetInit })
+                });
+            }
+            affectedTokens.push({ token: token, state: AffectedToken.ConditionAdded })
         }
 
         renderChatMessage(userId, effect.name, effect.icon, true, true, affectedTokens);
@@ -228,9 +296,9 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
         for (let token of targets) {
             const actorEffect = token.actor.effects.find(x => x.name === effect.name);
             if (!actorEffect) continue;
-    
+
             token.actor.deleteEmbeddedDocuments("ActiveEffect", [actorEffect._id]);
-            affectedTokens.push({token: token, state: AffectedToken.ConditionRemoved})
+            affectedTokens.push({ token: token, state: AffectedToken.ConditionRemoved })
         }
 
         renderChatMessage(userId, effect.name, effect.texture, true, false, affectedTokens);
@@ -240,21 +308,22 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
         const effect = {
             name: name,
             icon: icon,
-            statuses: [ statusName ],
-            flags: { 
+            statuses: [statusName],
+            flags: {
                 pf1: {
                     autoDelete: true
-                }
+                },
             }
         };
-        if (game.combat) {
-            effect.flags.pf1.initiative = game.combat.turns[game.combat.turn].initiative;
-        }
         if (setDuration.active) {
             // Not sure why active status effects are always set to a number of seconds even when 
-            // you use rounds (when you right-click on a status in the buffs page), but I'm following suit, 
-            // just to be safe... and also to exploit the way active effect expiry works
+            // you use rounds (when you right-click on a status in the buffs page), but I'm following suit, just to be safe...
             effect.duration = createStatusEffectDuration(setDuration);
+
+            if (game.combat && setDuration.end === "initiativeEnd") {
+                effect.duration.end = "initiative";
+                effect.flags.lumos = { "initiativeEnd": getInitiativeForInitEndEffect() };
+            }
         }
         return effect;
     }
@@ -275,21 +344,16 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
     }
 
     function getTotalSecondsOfCustomDuration(setDuration) {
-        let secs = (() => { switch (setDuration.units) {
+        switch (setDuration.units) {
             case "round": return setDuration.value * CONFIG.time.roundTime;
             case "minute": return setDuration.value * 60;
             case "hour": return setDuration.value * 3600;
             default: return setDuration.value;
-        }})();
-        // Dirty hack to support our custom "initiative-end" timing.
-        if (setDuration.end === "initiativeEnd") {
-            secs++;
         }
-        return secs;
     }
 
 
-    
+
     async function renderChatMessage(userId, condName, condIcon, isStatus, eventWasCreation, affectedTokens) {
         if (affectedTokens.length === 0) {
             showMessageForUser(userId, eventWasCreation
@@ -304,7 +368,7 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
             [AffectedToken.ConditionRemoved]: ["Removed from:", []],
             [AffectedToken.ConditionDecreased]: ["Decreased on:", []],
         };
-        affectedTokens.forEach(({token, state}) => {
+        affectedTokens.forEach(({ token, state }) => {
             tokenStateMap[state][1].push(token);
         });
 
@@ -316,19 +380,19 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
         `;
 
         const sectionHtml = Object.values(tokenStateMap)
-            .map(([stateSectionText, tokens]) => tokens.length 
-                ?  `<div class="card-content">
+            .map(([stateSectionText, tokens]) => tokens.length
+                ? `<div class="card-content">
                         <h4>${stateSectionText}</h4>
                         ${tokens.map(getHtmlForToken).join(" ")}
-                    </div>` 
+                    </div>`
                 : "")
             .join("");
 
         const chatMessageContent = `
             <div class="pf1 chat-card">
                 <header class="card-header type-color flexrow">
-                    <img src="${condIcon}" title="${condName}" width="36" height="36" style="border: 0;${isStatus 
-                        ? `${condName === "Battered" ? "mix-blend-mode: multiply;" : ""}filter: invert(1)`: ""}">
+                    <img src="${condIcon}" title="${condName}" width="36" height="36" style="border: 0;${isStatus
+                ? `${condName === "Battered" ? "mix-blend-mode: multiply;" : ""}filter: invert(1)` : ""}">
                     <h3 class="item-name">${condName}</h3>
                 </header>
                 ${sectionHtml}
@@ -336,14 +400,14 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
         `;
 
         const targetUser = game.users.get(userId);
-        const userControlledToken = targetUser.character?.getActiveTokens()[0] || 
+        const userControlledToken = targetUser.character?.getActiveTokens()[0] ||
             canvas.tokens.controlled.find(t => t.actor?.id === targetUser.character?.id) ||
             canvas.tokens.controlled[0];
         const speaker = userControlledToken
-            ? {token: userControlledToken.id, actor: userControlledToken.actor?.id, alias: userControlledToken.name}
+            ? { token: userControlledToken.id, actor: userControlledToken.actor?.id, alias: userControlledToken.name }
             : targetUser.character
-                ? {actor: targetUser.character.id, alias: targetUser.character.name}
-                : {user: userId, alias: targetUser.name};
+                ? { actor: targetUser.character.id, alias: targetUser.character.name }
+                : { user: userId, alias: targetUser.name };
 
         const messageId = foundry.utils.randomID();
         let chatMessage = ChatMessage.create({ // this is a promise
@@ -370,6 +434,114 @@ console.log("Lumos's Custom Conditions Manager | Executing setup script...");
         });
         await chatMessage;
     }
+
+
+    // Patched version of the original function in ActorPF. Doesn't expire initiative-timed effects on events that don't contain init info.
+    async function patchedFunc_ExpireActiveEffects(
+        { combat, timeOffset = 0, worldTime = null, event = null, initiative = null } = {},
+        context = {}
+        ) {
+            if (!this.isOwner) throw new Error("Must be owner");
+
+            // Canonical world time.
+            // Due to async code in numerous places and no awaiting of time updates, this can go out of sync of actual time.
+            worldTime ??= game.time.worldTime;
+            worldTime += timeOffset;
+
+            // Effects that have timed out
+            const expiredEffects = this._effectsWithDuration.filter((ae) => {
+                const { seconds, startTime } = ae.duration;
+                const { rounds, startRound } = ae.duration;
+
+                // Calculate remaining duration.
+                // AE.duration.remaining is updated by Foundry only in combat and is unreliable.
+                let remaining = Infinity;
+                // Convert rounds to seconds
+                if (Number.isFinite(seconds) && seconds >= 0) {
+                    const elapsed = worldTime - (startTime ?? 0);
+                    remaining = seconds - elapsed;
+                } else if (rounds > 0 && combat) {
+                    // BUG: This will ignore which combat the round tracking started for
+                    const elapsed = combat.round - (startRound ?? 0);
+                    remaining = (rounds - elapsed) * CONFIG.time.roundTime;
+                }
+
+                // Time still remaining
+                if (remaining > 0) return false;
+
+                const flags = ae.getFlag("pf1", "duration") ?? {};
+
+                switch (flags.end || "turnStart") {
+                    // Initiative based ending
+                    case "initiative":
+                        if (initiative !== null) {
+                            return initiative <= flags.initiative;
+                        }
+                        // Anything not on initiative expires if they have negative time remaining
+                        ////////////////// PATCH BEGINS HERE
+                        //return remaining < 0;
+                        // Do not expire initiative-timed effects if the current event is not initiative-related.
+                        // Also note that "event" is null when this is called by CombatPF._processInitiative
+                        return false;
+                        ////////////////// PATCH ENDS HERE
+                    // End on turn start, but we're not there yet
+                    case "turnStart":
+                        if (remaining === 0 && !["turnStart", "turnEnd"].includes(event)) return false;
+                        break;
+                    // End on turn end, but we're not quite there yet
+                    case "turnEnd":
+                        if (remaining === 0 && event !== "turnEnd") return false;
+                        break;
+                }
+
+                // Otherwise end when time is out
+                return remaining <= 0;
+            });
+
+            const disableActiveEffects = [],
+                deleteActiveEffects = [],
+                disableBuffs = [];
+
+            for (const ae of expiredEffects) {
+                let item;
+                // Use AE parent when available
+                if (ae.parent instanceof Item) item = ae.parent;
+                // Otherwise support older origin cases
+                else item = ae.origin ? fromUuidSync(ae.origin, { relative: this }) : null;
+
+                if (item?.type === "buff") {
+                    disableBuffs.push({ _id: item.id, "system.active": false });
+                } else {
+                    if (ae.getFlag("pf1", "autoDelete")) {
+                        deleteActiveEffects.push(ae.id);
+                    } else {
+                        disableActiveEffects.push({ _id: ae.id, disabled: true });
+                    }
+                }
+            }
+
+            // Add context info for why this update happens to allow modules to understand the cause.
+            context.pf1 ??= {};
+            context.pf1.reason = "duration";
+
+            if (deleteActiveEffects.length) {
+                const deleteAEContext = foundry.utils.mergeObject(
+                    { render: !disableBuffs.length && !disableActiveEffects.length },
+                    context
+                );
+                await this.deleteEmbeddedDocuments("ActiveEffect", deleteActiveEffects, deleteAEContext);
+            }
+
+            if (disableActiveEffects.length) {
+                const disableAEContext = foundry.utils.mergeObject({ render: !disableBuffs.length }, context);
+                await this.updateEmbeddedDocuments("ActiveEffect", disableActiveEffects, disableAEContext);
+            }
+
+            if (disableBuffs.length) {
+                await this.updateEmbeddedDocuments("Item", disableBuffs, context);
+            }
+        }
+
 
 
     await init();
